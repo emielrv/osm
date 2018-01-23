@@ -141,47 +141,54 @@ class OsmDriver(settings.driver):
         res = pd.read_html(table)[0]
         return res
 
-    def train(self):
-        self.go_to_url('Training')
-        time.sleep(1)
-        training_container = self.find_element_by_class_name('knockout-loader-content')
-        trainingen = training_container.find_elements_by_xpath("//button[contains(., 'K')]")
-        for training in trainingen:
-            open_slot = True
-            training.click()
-            spelers = self.read_table()
-            spelers_raw = copy.copy(spelers)
-            spelers = spelers[spelers['Speler (Leeftijd)'] != 'Speler (Leeftijd)']
-            spelers['leeftijd'] = spelers['Speler (Leeftijd)'].str[-3:-1]
-            spelers = spelers.sort_values(['leeftijd'])
-            clickable_spelers = self.find_elements_by_xpath('//tr[contains(@class,clickable)]')
-            while open_slot:
-                select = spelers['Speler (Leeftijd)'].values[0]
-                correct_speler = clickable_spelers[np.where(spelers_raw['Speler (Leeftijd)'] == select)[0][0]]
-                correct_speler.click()
-                time.sleep(5)
-                if self.find_elements_by_xpath('//h3[contains(.,"staat in de basis")]'):
-                    spelers = spelers[spelers['Speler (Leeftijd)'] != select]
-                    footer = self.find_element_by_class_name('modal-v2').find_element_by_class_name('modal-footer')
-                    footer.find_elements_by_class_name('btn-primary')[0].click()
-                    time.sleep(1)
-                    if spelers.empty:
-                        info_logger.info('Er kan niemand getraind worden')
+    def train(self, iteration):
+        if iteration < 8:
+            self.go_to_url('Training')
+            time.sleep(1)
+            training_container = self.find_element_by_class_name('knockout-loader-content')
+            trainingen = training_container.find_elements_by_xpath("//button[contains(., 'K')]")
+            for training in trainingen:
+                open_slot = True
+                training.click()
+                spelers = self.read_table()
+                spelers_raw = copy.copy(spelers)
+                spelers = spelers[spelers['Speler (Leeftijd)'] != 'Speler (Leeftijd)']
+                spelers['leeftijd'] = spelers['Speler (Leeftijd)'].str[-3:-1]
+                spelers = spelers.sort_values(['leeftijd'])
+                clickable_spelers = self.find_elements_by_xpath('//tr[contains(@class,clickable)]')
+                while open_slot:
+                    select = spelers['Speler (Leeftijd)'].values[0]
+                    correct_speler = clickable_spelers[np.where(spelers_raw['Speler (Leeftijd)'] == select)[0][0]]
+                    correct_speler.click()
+                    time.sleep(5)
+                    if self.find_elements_by_xpath('//h3[contains(.,"staat in de basis")]'):
+                        spelers = spelers[spelers['Speler (Leeftijd)'] != select]
+                        footer = self.find_element_by_class_name('modal-v2').find_element_by_class_name('modal-footer')
+                        footer.find_elements_by_class_name('btn-primary')[0].click()
+                        time.sleep(1)
+                        if spelers.empty:
+                            info_logger.info('Er kan niemand getraind worden')
+                            open_slot = False
+                    elif self.find_elements_by_xpath('//h3[contains(.,"Je hebt niet genoeg Clubkas")]'):
                         open_slot = False
-                elif self.find_elements_by_xpath('//h3[contains(.,"Je hebt niet genoeg Clubkas")]'):
-                    open_slot = False
-                    footer = self.find_element_by_class_name('modal-v2').find_element_by_class_name('modal-footer')
-                    footer.find_elements_by_class_name('btn-primary')[1].click()
-                    time.sleep(1)
-                    info_logger.info('Niet genoeg geld om te trainen')
-                elif not self.find_elements_by_class_name('modal-content')[0].is_displayed():
-                    open_slot = False
-                    info_logger.info('Speler getraind')
-                    post_to_slack(slack_client, 'Speler getraind')
-                    time.sleep(1)
-                else:
-                    open_slot = False
-                    post_to_slack(slack_client, 'Is de speler getraind? Dit zou niet moeten gebeuren.')
+                        footer = self.find_element_by_class_name('modal-v2').find_element_by_class_name('modal-footer')
+                        footer.find_elements_by_class_name('btn-primary')[1].click()
+                        time.sleep(1)
+                        info_logger.info('Niet genoeg geld om te trainen')
+                    elif not self.find_elements_by_class_name('modal-content')[0].is_displayed():
+                        open_slot = False
+                        info_logger.info('Speler getraind')
+                        post_to_slack(slack_client, 'Speler getraind')
+                    else:
+                        open_slot = False
+                        post_to_slack(slack_client, 'Is de speler getraind? Dit zou niet moeten gebeuren.')
+                    if not open_slot:
+                        # Omdat er vaak iets fout gaat nadat er 1 is getraind, starten we maar opnieuw als er een
+                        # getraind is.
+                        iteration += 1
+                        self.train(iteration)
+        else:
+            post_to_slack(slack_client, 'Training gaat niet goed. Dit is nu al te veel geprobeerd')
 
     def rond_training_af(self, slack_client):
         self.go_to_url('Training')
@@ -411,7 +418,7 @@ def run_script_within_try(slack_client):
         browser.rond_training_af(slack_client)
 
         # Train speler
-        browser.train()
+        browser.train(0)
 
         # Zet specialisten goed
         browser.zet_specialist_goed()
