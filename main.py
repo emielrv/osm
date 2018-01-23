@@ -179,6 +179,7 @@ class OsmDriver(webdriver.PhantomJS):
                     open_slot = False
                     info_logger.info('Speler getraind')
                     post_to_slack(slack_client, 'Speler getraind')
+                    time.sleep(1)
                 else:
                     open_slot = True
 
