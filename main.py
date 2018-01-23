@@ -4,6 +4,7 @@ import logging
 import re
 import sys
 import time
+import settings
 
 import numpy as np
 import pandas as pd
@@ -15,10 +16,6 @@ from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as ec
 from selenium.webdriver.support.ui import WebDriverWait
 from slackclient import SlackClient
-
-# Constants
-ini_file = r'/home/pi/Documents/OSM/config.yaml'
-channel = '#osm'
 
 
 def handle_direct_command(command, slack_client, run_time):
@@ -35,13 +32,15 @@ def handle_direct_command(command, slack_client, run_time):
     if command == 'stop':
         response = 'Ok. We will stop'
         result['run'] = False
-    if command == 'run':
+    elif command == 'run':
         response = 'Here we go'
         result['run'] = True
-    if command == 'last run':
+    elif command == 'last run':
         response = 'The last run was scheduled: {}'.format(run_time)
-
-    if not response:
+    elif command == 'reset':
+        response = 'Everything is cleared'
+        result['reset'] = True
+    else:
         response = default_response
 
     post_to_slack(slack_client, response)
@@ -83,7 +82,7 @@ def post_to_slack(slack_client, message):
             text=message,
             type="message",
             subtype="bot_message",
-            channel="osm_overview"
+            channel=settings.slack['channel']
         )
 
 
@@ -391,12 +390,6 @@ def create_logger(directory, name, level):
     root_logger.addHandler(console_handler)
     return logging.getLogger(name)
 
-
-def read_config(config_file):
-    # Het yaml bestand wordt hier ingelezen
-    return yaml.safe_load(open(config_file, 'r'))
-
-
 def run_script_within_try(slack_client):
     # init
     # Als gekozen voor Chrome, download eerst een chromedriver (https://sites.google.com/a/chromium.org/chromedriver/)
@@ -407,7 +400,7 @@ def run_script_within_try(slack_client):
         browser.set_window_size(1920, 1080)
 
         # login op osm en de juiste competitie
-        browser.login(config['username'], config['password'])
+        browser.login(settings.username, settings.password)
 
         # Haal geld van de bank
         browser.transfer_geld('af')
@@ -459,34 +452,35 @@ def init_slack_client(token):
 
 
 if __name__ == "__main__":
-    config = read_config(ini_file)
     # Logger aanmaken
     # Dit kan je oproepen overal door: info_logger.info('Dit is informatie')
     # Je kan ook een error, of een warning opgeven. Info neemt veel meer mee dan de error file.
     # De error kan je beter niet direct oproepen.
     # Maak daarvoor in de plaats een FileError want die neemt nog andere logs mee (bijv slack).
-    info_logger = create_logger(config['directory'], 'info', logging.INFO)
-    error_logger = create_logger(config['directory'], 'error', logging.ERROR)
+    info_logger = create_logger(settings.directory, 'info', logging.INFO)
+    error_logger = create_logger(settings.directory, 'error', logging.ERROR)
 
     run_time = datetime.datetime.now()
     current_time = datetime.datetime.now()
     diff = current_time - run_time
 
-    if config['slack']:
-        slack_client = init_slack_client(config['slack']['token'])
+    if settings.slack:
+        slack_client = init_slack_client(settings.slack['token'])
     else:
         slack_client = None
     run_script(slack_client)
     run_this = True
+    reset = False
     warn = False
     while True:
         current_time = datetime.datetime.now()
         diff = current_time - run_time
         time_passed = (divmod(diff.days * 86400 + diff.seconds, 3600)[0] > 7)
-        if time_passed:
+        if time_passed or reset:
             if run_this:
                 run_script(slack_client)
                 run_time = datetime.datetime.now()
+                reset = False
             elif warn:
                 warn = False
                 post_to_slack(slack_client, 'Het is tijd om te trainen!')
@@ -496,10 +490,13 @@ if __name__ == "__main__":
                 # Running the script closes the connection. We might need to set it up agains
                 mess_res = parse_messages(slack_client.rtm_read(), run_time)
             except:
-                slack_client = init_slack_client(config['slack']['token'])
+                slack_client = init_slack_client(settings.slack['token'])
                 mess_res = parse_messages(slack_client.rtm_read(), run_time)
         else:
             mess_res = None
         if mess_res:
             if 'run' in mess_res:
                 run_this = mess_res['run']
+            if 'reset' in mess_res:
+                reset = mess_res['reset']
+                run_this = True
