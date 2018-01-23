@@ -4,18 +4,17 @@ import logging
 import re
 import sys
 import time
-import settings
 
 import numpy as np
 import pandas as pd
-import yaml
 from bs4 import BeautifulSoup
-from selenium import webdriver
 from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.common.by import By
 from selenium.webdriver.support import expected_conditions as ec
 from selenium.webdriver.support.ui import WebDriverWait
 from slackclient import SlackClient
+
+import settings
 
 
 def handle_direct_command(command, slack_client, run_time):
@@ -86,7 +85,7 @@ def post_to_slack(slack_client, message):
         )
 
 
-class OsmDriver(webdriver.PhantomJS):
+class OsmDriver(settings.driver):
     def login(self, username, password):
         self.implicitly_wait(5)
         # Log in
@@ -160,7 +159,7 @@ class OsmDriver(webdriver.PhantomJS):
                 select = spelers['Speler (Leeftijd)'].values[0]
                 correct_speler = clickable_spelers[np.where(spelers_raw['Speler (Leeftijd)'] == select)[0][0]]
                 correct_speler.click()
-                time.sleep(1)
+                time.sleep(5)
                 if self.find_elements_by_xpath('//h3[contains(.,"staat in de basis")]'):
                     spelers = spelers[spelers['Speler (Leeftijd)'] != select]
                     footer = self.find_element_by_class_name('modal-v2').find_element_by_class_name('modal-footer')
@@ -181,7 +180,8 @@ class OsmDriver(webdriver.PhantomJS):
                     post_to_slack(slack_client, 'Speler getraind')
                     time.sleep(1)
                 else:
-                    open_slot = True
+                    open_slot = False
+                    post_to_slack(slack_client, 'Is de speler getraind? Dit zou niet moeten gebeuren.')
 
     def rond_training_af(self, slack_client):
         self.go_to_url('Training')
@@ -391,15 +391,17 @@ def create_logger(directory, name, level):
     root_logger.addHandler(console_handler)
     return logging.getLogger(name)
 
+
 def run_script_within_try(slack_client):
     # init
     # Als gekozen voor Chrome, download eerst een chromedriver (https://sites.google.com/a/chromium.org/chromedriver/)
-    # 'C:/Users/EmielVeersmaVeneficu/Documents/OSM/chromedriver.exe'
-    browser = OsmDriver()
+    if settings.driver_path:
+        browser = OsmDriver(settings.driver_path)
+    else:
+        browser = OsmDriver()
 
+    browser.set_window_size(1920, 1080)
     try:
-        browser.set_window_size(1920, 1080)
-
         # login op osm en de juiste competitie
         browser.login(settings.username, settings.password)
 
