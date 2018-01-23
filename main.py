@@ -166,7 +166,7 @@ class OsmDriver(webdriver.PhantomJS):
                     footer = self.find_element_by_class_name('modal-v2').find_element_by_class_name('modal-footer')
                     footer.find_elements_by_class_name('btn-primary')[0].click()
                     time.sleep(1)
-                    if not spelers:
+                    if spelers.empty:
                         info_logger.info('Er kan niemand getraind worden')
                         open_slot = False
                 elif self.find_elements_by_xpath('//h3[contains(.,"Je hebt niet genoeg Clubkas")]'):
