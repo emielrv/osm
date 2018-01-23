@@ -485,8 +485,8 @@ if __name__ == "__main__":
         time_passed = (divmod(diff.days * 86400 + diff.seconds, 3600)[0] > 7)
         if time_passed:
             if run_this:
-                run_time = datetime.datetime.now()
                 run_script(slack_client)
+                run_time = datetime.datetime.now()
             elif warn:
                 warn = False
                 post_to_slack(slack_client, 'Het is tijd om te trainen!')
