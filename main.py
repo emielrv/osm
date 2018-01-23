@@ -12,7 +12,7 @@ from bs4 import BeautifulSoup
 from selenium import webdriver
 from selenium.common.exceptions import TimeoutException
 from selenium.webdriver.common.by import By
-from selenium.webdriver.support import expected_conditions as EC
+from selenium.webdriver.support import expected_conditions as ec
 from selenium.webdriver.support.ui import WebDriverWait
 from slackclient import SlackClient
 
@@ -45,7 +45,7 @@ def handle_direct_command(command, slack_client, run_time):
         response = default_response
 
     post_to_slack(slack_client, response)
-    return (result)
+    return result
 
 
 def parse_messages(slack_events, run_time):
@@ -114,7 +114,7 @@ class OsmDriver(webdriver.PhantomJS):
     def wait_on_class(self, class_name):
         delay = 5  # seconds
         try:
-            myElem = WebDriverWait(self, delay).until(EC.presence_of_element_located((By.CLASS_NAME, class_name)))
+            WebDriverWait(self, delay).until(ec.presence_of_element_located((By.CLASS_NAME, class_name)))
             success = True
         except TimeoutException:
             success = False
@@ -123,7 +123,7 @@ class OsmDriver(webdriver.PhantomJS):
     def wait_on_xpath(self, xpath):
         delay = 3  # seconds
         try:
-            myElem = WebDriverWait(self, delay).until(EC.presence_of_element_located((By.XPATH, xpath)))
+            WebDriverWait(self, delay).until(ec.presence_of_element_located((By.XPATH, xpath)))
             success = True
         except TimeoutException:
             success = False
@@ -146,7 +146,8 @@ class OsmDriver(webdriver.PhantomJS):
     def train(self):
         self.go_to_url('Training')
         time.sleep(1)
-        trainingen = self.find_elements_by_xpath("//button[contains(., '13K')]")
+        training_container = self.find_element_by_class_name('knockout-loader-content')
+        trainingen = training_container.find_elements_by_xpath("//button[contains(., 'K')]")
         for training in trainingen:
             open_slot = True
             training.click()
@@ -182,12 +183,10 @@ class OsmDriver(webdriver.PhantomJS):
                 else:
                     open_slot = True
 
-    def text_in_body(self, text):
-        text in self.find_element_by_tag_name('body').text
-
     def rond_training_af(self, slack_client):
         self.go_to_url('Training')
-        found_afrond_button = self.wait_on_class('btn-show-result')
+        self.wait_on_class('btn-show-result')
+        time.sleep(3)
         for button in self.find_elements_by_class_name('btn-show-result'):
             button.click()
             post_to_slack(slack_client, 'Speler getraind')
@@ -233,6 +232,7 @@ class OsmDriver(webdriver.PhantomJS):
         self.go_to_url('League/Fixtures')
         self.wait_on_class('highlight')
         highlight = self.find_elements_by_class_name('highlight')
+        level = 0
         if highlight:
             level_class = highlight[0].find_element_by_class_name('icon-referee').get_attribute('class')
             if 'icon-referee-verylenient' in level_class:
@@ -252,9 +252,7 @@ class OsmDriver(webdriver.PhantomJS):
                 level = 5
             else:
                 FileError('Onbekende scheidsrechter', self)
-            return (level)
-        else:
-            return (0)
+        return level
 
     def zet_hardheid_goed(self):
         level = self.haal_scheidsrechter_hardheid_op()
@@ -262,6 +260,7 @@ class OsmDriver(webdriver.PhantomJS):
         if level > 0:
             self.go_to_url('Tactics')
             self.wait_on_xpath('//div[@id="carousel-tacticstyleofplay"]')
+            doel = ''
             if level == 5:
                 doel = 'Voorzichtig'
             elif level == 4:
@@ -328,95 +327,50 @@ class OsmDriver(webdriver.PhantomJS):
                 # Selecteer de oudste, en dan de eerste
                 speler_overzicht['aanvoerder'] = speler_overzicht['Ver'].astype(int) / 2 + speler_overzicht[
                     'Lft'].astype(int)
-                Aanvoerder = speler_overzicht.sort_values(by=['aanvoerder'], ascending=False)['Aanvallers'].values[0]
+                aanvoerder = speler_overzicht.sort_values(by=['aanvoerder'], ascending=False)['Aanvallers'].values[0]
                 for speler in self.find_elements_by_class_name('td-player-name'):
-                    if speler.text == Aanvoerder:
+                    if speler.text == aanvoerder:
                         speler.click()
                         time.sleep(4)
                 self.find_element_by_class_name('slider-next').click()
             # Penalty
             if i == 1:
-                speler_overzicht = speler_overzicht[~speler_overzicht['Aanvallers'].isin([Aanvoerder])]
+                speler_overzicht = speler_overzicht[~speler_overzicht['Aanvallers'].isin([aanvoerder])]
                 speler_overzicht['penalty'] = speler_overzicht['Aan'].astype(int) / 2 + speler_overzicht[
                     'Lft'].astype(int)
-                Penalty = speler_overzicht.sort_values(by=['penalty'], ascending=False)['Aanvallers'].values[0]
+                penalty = speler_overzicht.sort_values(by=['penalty'], ascending=False)['Aanvallers'].values[0]
                 for speler in self.find_elements_by_class_name('td-player-name'):
-                    if speler.text == Penalty:
+                    if speler.text == penalty:
                         speler.click()
                         time.sleep(4)
                 self.find_element_by_class_name('slider-next').click()
             # Vrije trappen
             if i == 2:
-                speler_overzicht = speler_overzicht[~speler_overzicht['Aanvallers'].isin([Aanvoerder, Penalty])]
+                speler_overzicht = speler_overzicht[~speler_overzicht['Aanvallers'].isin([aanvoerder, penalty])]
                 speler_overzicht['vrij'] = speler_overzicht['Aan'].astype(int)
-                Vrij = speler_overzicht.sort_values(by=['vrij'], ascending=False)['Aanvallers'].values[0]
+                vrij = speler_overzicht.sort_values(by=['vrij'], ascending=False)['Aanvallers'].values[0]
                 for speler in self.find_elements_by_class_name('td-player-name'):
-                    if speler.text == Vrij:
+                    if speler.text == vrij:
                         speler.click()
                         time.sleep(4)
                 self.find_element_by_class_name('slider-next').click()
             # Corners
             if i == 3:
-                speler_overzicht = speler_overzicht[~speler_overzicht['Aanvallers'].isin([Aanvoerder, Penalty, Vrij])]
+                speler_overzicht = speler_overzicht[~speler_overzicht['Aanvallers'].isin([aanvoerder, penalty, vrij])]
                 speler_overzicht['corner'] = speler_overzicht['Aan'].astype(int) + speler_overzicht['Ver'].astype(
                     int) / 5
-                Corner = speler_overzicht.sort_values(by=['corner'], ascending=False)['Aanvallers'].values[0]
+                corner = speler_overzicht.sort_values(by=['corner'], ascending=False)['Aanvallers'].values[0]
                 for speler in self.find_elements_by_class_name('td-player-name'):
-                    if speler.text == Corner:
+                    if speler.text == corner:
                         speler.click()
                         time.sleep(4)
-
-    def fill_in(self, functie, spelers, spelers_raw):
-        if functie == 'keeper':
-            keepers = spelers[spelers['Aan'] == 0]
-            select = keepers.sort_values(by='Ver', ascending=False)['Naam'].values[0]
-        if functie == 'verd':
-            verdedigers = spelers[(spelers['Aan'] < 50) & (spelers['Aan'] > 0) & (spelers['Ver'] > 50)]
-            select = verdedigers.sort_values(by='Ver', ascending=False)['Naam'].values[0]
-        if functie == 'mid':
-            middevelders = spelers[(spelers['Aan'] > 50) & (spelers['Ver'] > 50)]
-            select = middevelders.sort_values(by='Alg', ascending=False)['Naam'].values[0]
-        if functie == 'aanv':
-            aanvallers = spelers[(spelers['Aan'] > 50) & (spelers['Ver'] < 50)]
-            select = aanvallers.sort_values(by='Aan', ascending=False)['Naam'].values[0]
-
-        clickable_spelers = self.find_elements_by_class_name('td-player-name')
-
-        correct_speler = clickable_spelers[
-            clickable_spelers.__len__() - spelers_raw.__len__() + np.where(spelers_raw['Naam'] == select)[0][0]]
-        correct_speler.click()
-        spelers = spelers[spelers['Naam'] != select]
-        return (spelers)
-
-    def create_spelers_at_selectie(self):
-        spelers = self.read_table()
-        spelers.columns = ['positie', 'Naam', 'Aan', 'Ver', 'Alg', 'Ver (fout)', 'Fit', 'Mor']
-        spelers = spelers[(~pd.isna(spelers['Aan'])) & (spelers['Aan'] != 'Ver')]
-        spelers_raw = copy.copy(spelers)
-        spelers['Ver'] = spelers['Ver'].astype(int)
-        spelers['Alg'] = spelers['Alg'].astype(int)
-        spelers['Aan'] = spelers['Aan'].astype(int)
-        progress_bars = self.find_element_by_id('modal-selectlineupplayer-body').find_elements_by_class_name(
-            'progress')
-        fit_bars = progress_bars[0::2]
-        mor_bars = progress_bars[1::2]
-        fits = []
-        mors = []
-        for fit_bar in fit_bars:
-            fits.append(int(fit_bar.get_attribute('title')[:-1]))
-        for mor_bar in mor_bars:
-            mors.append(int(mor_bar.get_attribute('title')[:-1]))
-        spelers['Fit'] = fits
-        spelers['Mor'] = mors
-        spelers = spelers[spelers['Fit'] > 90]
-        return (spelers, spelers_raw)
 
 
 class FileError(Exception):
     """Custom error handling"""
 
-    def __init__(self, message, browser):
-        post_to_slack(slack_client, message)
+    def __init__(self, message, client):
+        post_to_slack(client, message)
         error_logger.error(message)
         super().__init__(message)
 
@@ -424,23 +378,23 @@ class FileError(Exception):
 def create_logger(directory, name, level):
     logging.getLogger().addHandler(logging.StreamHandler(sys.stdout))
 
-    logFormatter = logging.Formatter("%(asctime)s [%(threadName)-12.12s] [%(levelname)-5.5s]  %(message)s")
-    rootLogger = logging.getLogger(name)
+    log_formatter = logging.Formatter("%(asctime)s [%(threadName)-12.12s] [%(levelname)-5.5s]  %(message)s")
+    root_logger = logging.getLogger(name)
 
-    fileHandler = logging.FileHandler("{0}/{1}.log".format(directory, name))
-    fileHandler.setFormatter(logFormatter)
-    rootLogger.addHandler(fileHandler)
-    rootLogger.setLevel(level)
+    file_handler = logging.FileHandler("{0}/{1}.log".format(directory, name))
+    file_handler.setFormatter(log_formatter)
+    root_logger.addHandler(file_handler)
+    root_logger.setLevel(level)
 
-    consoleHandler = logging.StreamHandler()
-    consoleHandler.setFormatter(logFormatter)
-    rootLogger.addHandler(consoleHandler)
-    return (logging.getLogger(name))
+    console_handler = logging.StreamHandler()
+    console_handler.setFormatter(log_formatter)
+    root_logger.addHandler(console_handler)
+    return logging.getLogger(name)
 
 
-def read_config(ini_file):
-    '''Het yaml bestand wordt hier ingelezen'''
-    return yaml.safe_load(open(ini_file, 'r'))
+def read_config(config_file):
+    # Het yaml bestand wordt hier ingelezen
+    return yaml.safe_load(open(config_file, 'r'))
 
 
 def run_script_within_try(slack_client):
@@ -496,12 +450,12 @@ def run_script(slack_client=None):
         finish = run_script_within_try(slack_client)
 
 
-def init_slack_client(config):
-    slack_client = SlackClient(config['slack']['token'])
-    if not slack_client.rtm_connect(with_team_state=False):
+def init_slack_client(token):
+    client = SlackClient(token)
+    if not client.rtm_connect(with_team_state=False):
         print('Slack kan geen verbinding maken')
-        slack_client = None
-    return slack_client
+        client = None
+    return client
 
 
 if __name__ == "__main__":
@@ -509,7 +463,8 @@ if __name__ == "__main__":
     # Logger aanmaken
     # Dit kan je oproepen overal door: info_logger.info('Dit is informatie')
     # Je kan ook een error, of een warning opgeven. Info neemt veel meer mee dan de error file.
-    # De error kan je beter niet direct oproepen. Maak daarvoor in de plaats een FileError, want die neemt nog andere logs mee (bijv slack).
+    # De error kan je beter niet direct oproepen.
+    # Maak daarvoor in de plaats een FileError want die neemt nog andere logs mee (bijv slack).
     info_logger = create_logger(config['directory'], 'info', logging.INFO)
     error_logger = create_logger(config['directory'], 'error', logging.ERROR)
 
@@ -518,7 +473,7 @@ if __name__ == "__main__":
     diff = current_time - run_time
 
     if config['slack']:
-        slack_client = init_slack_client(config)
+        slack_client = init_slack_client(config['slack']['token'])
     else:
         slack_client = None
     run_script(slack_client)
@@ -541,8 +496,10 @@ if __name__ == "__main__":
                 # Running the script closes the connection. We might need to set it up agains
                 mess_res = parse_messages(slack_client.rtm_read(), run_time)
             except:
-                slack_client = init_slack_client(config)
+                slack_client = init_slack_client(config['slack']['token'])
                 mess_res = parse_messages(slack_client.rtm_read(), run_time)
+        else:
+            mess_res = None
         if mess_res:
             if 'run' in mess_res:
                 run_this = mess_res['run']
