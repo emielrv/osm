@@ -452,6 +452,7 @@ def run_script(slack_client=None):
     finish = False
     while iteration < 5 and not finish:
         finish = run_script_within_try(slack_client)
+        iteration += 1
 
 
 def init_slack_client(token):
