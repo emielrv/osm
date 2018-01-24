@@ -207,7 +207,7 @@ class OsmDriver(settings.driver):
             info_logger.info('Op toast geklikt')
             post_to_slack(slack_client, 'Op toast geklikt')
 
-    def transfer_geld(self, richting):
+    def transfer_geld(self, richting, iteration = 0):
         self.go_to_url('ControlCentre')
         time.sleep(5)
         self.wait_on_xpath("//div[@id='clubfunds-amount']")
@@ -229,9 +229,12 @@ class OsmDriver(settings.driver):
                 info_logger.info('geld op de bank gezet')
                 post_to_slack(slack_client, 'Geld op de bank')
             else:
-                # Eerst geld eraf halen. Dan er weer op zetten
-                self.transfer_geld('af')
-                self.transfer_geld('op')
+                if iteration == 0:
+                    # Eerst geld eraf halen. Dan er weer op zetten
+                    self.transfer_geld('af')
+                    self.transfer_geld('op', 1)
+                else:
+                    post_to_slack(slack_client, 'Niet gelukt geld op de bank te zetten')
         else:
             FileError('Onbekende richting om geld op over te zetten.', self)
             post_to_slack(slack_client, 'Onbekende richting om geld op te zetten')
