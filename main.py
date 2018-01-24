@@ -147,7 +147,8 @@ class OsmDriver(settings.driver):
             time.sleep(1)
             training_container = self.find_element_by_class_name('knockout-loader-content')
             trainingen = training_container.find_elements_by_xpath("//button[contains(., 'K')]")
-            for training in trainingen:
+            if trainingen:
+                training = trainingen[0]
                 open_slot = True
                 training.click()
                 spelers = self.read_table()
