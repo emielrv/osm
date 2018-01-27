@@ -25,7 +25,6 @@ def handle_direct_command(command, slack_client, run_time):
     default_response = 'Not sure what you mean. Try \"stop\", \"run\" or \"last run\".'
 
     # Finds and executes the given command, filling in response
-    response = None
     result = dict()
     # This is where you start to implement more direct mention commands
     if command == 'stop':
@@ -86,7 +85,7 @@ def post_to_slack(slack_client, message):
 
 
 class OsmDriver(settings.driver):
-    def login(self, username, password):
+    def login(self, username, password, slack_client):
         self.implicitly_wait(5)
         # Log in
         self.get("http://www.onlinesoccermanager.nl/Login")
@@ -97,15 +96,16 @@ class OsmDriver(settings.driver):
         login_attempt = self.find_element_by_xpath("//*[@type='submit']")
         login_attempt.submit()
         info_logger.info('ingelogd')
-        time.sleep(10)
+        time.sleep(5)
 
         # Wacht tot hij geladen is
-        found_active = self.wait_on_class('active')
+        self.wait_on_class('active')
 
-        if not found_active:
-            raise FileError("Kan geen actieve competitie vinden.", self)
         # Ga naar actieve competitie
         active_competition = self.find_element_by_class_name('active')
+
+        if not active_competition:
+            raise FileError("Kan geen actieve competitie vinden.", slack_client)
         active_competition.click()
         info_logger.info('actieve competitie gekozen')
 
@@ -138,58 +138,42 @@ class OsmDriver(settings.driver):
         table = table + '<tbody>'
         table = table + ''.join(str(soup.find_all('tr')))
         table = table + '</tbody></table>'
-        res = pd.read_html(table)[0]
+        res = pd.read_html(table, header=0)
+        if len(res) > 1:
+            FileError("Meerdere tabellen gevonden")
+        else:
+            res = res[0]
+            res = res.iloc[1:]
         return res
 
-    def train(self, iteration):
-        if iteration < 8:
-            self.go_to_url('Training')
-            time.sleep(1)
-            training_container = self.find_element_by_class_name('knockout-loader-content')
-            trainingen = training_container.find_elements_by_xpath("//button[contains(., 'K')]")
-            if trainingen:
-                training = trainingen[0]
-                open_slot = True
-                training.click()
-                spelers = self.read_table()
-                spelers_raw = copy.copy(spelers)
-                spelers = spelers[spelers['Speler (Leeftijd)'] != 'Speler (Leeftijd)']
-                spelers['leeftijd'] = spelers['Speler (Leeftijd)'].str[-3:-1]
-                spelers = spelers.sort_values(['leeftijd'])
-                clickable_spelers = self.find_elements_by_xpath('//tr[contains(@class,clickable)]')
-                while open_slot:
-                    select = spelers['Speler (Leeftijd)'].values[0]
-                    correct_speler = clickable_spelers[np.where(spelers_raw['Speler (Leeftijd)'] == select)[0][0]]
-                    correct_speler.click()
-                    time.sleep(5)
-                    if self.find_elements_by_xpath('//h3[contains(.,"staat in de basis")]'):
-                        spelers = spelers[spelers['Speler (Leeftijd)'] != select]
-                        footer = self.find_element_by_class_name('modal-v2').find_element_by_class_name('modal-footer')
-                        footer.find_elements_by_class_name('btn-primary')[0].click()
-                        time.sleep(1)
-                        if spelers.empty:
-                            info_logger.info('Er kan niemand getraind worden')
-                            open_slot = False
-                    elif self.find_elements_by_xpath('//h3[contains(.,"Je hebt niet genoeg Clubkas")]'):
-                        open_slot = False
-                        footer = self.find_element_by_class_name('modal-v2').find_element_by_class_name('modal-footer')
-                        footer.find_elements_by_class_name('btn-primary')[1].click()
-                        time.sleep(1)
-                        info_logger.info('Niet genoeg geld om te trainen')
-                    elif not self.find_elements_by_class_name('modal-content')[0].is_displayed():
-                        open_slot = False
-                        info_logger.info('Speler getraind')
-                        post_to_slack(slack_client, 'Speler getraind')
-                    else:
-                        open_slot = False
-                        post_to_slack(slack_client, 'Is de speler getraind? Dit zou niet moeten gebeuren.')
-                    if not open_slot:
-                        # Omdat er vaak iets fout gaat nadat er 1 is getraind, starten we maar opnieuw als er een
-                        # getraind is.
-                        iteration += 1
-                        self.train(iteration)
-        else:
-            post_to_slack(slack_client, 'Training gaat niet goed. Dit is nu al te veel geprobeerd')
+    def get_spelers(self):
+        spelers = self.read_table()
+        get_col = spelers.columns[1]
+        spelers_raw = copy.copy(spelers)
+        spelers['leeftijd'] = spelers[get_col].str[-3:-1]
+        spelers = spelers.sort_values(['leeftijd'])
+        return spelers, spelers_raw, get_col
+
+    def train(self, slack_client, i):
+        self.go_to_url('Training')
+        time.sleep(1)
+        training_container = self.find_element_by_class_name('knockout-loader-content')
+        trainingen = training_container.find_elements_by_class_name("btn")
+        training = trainingen[i]
+        if training.text[-1:] == 'K':
+            training.click()
+            spelers, spelers_raw, get_col = self.get_spelers()
+            clickable_spelers = self.find_elements_by_css_selector('tr.clickable')
+            while not spelers.empty:
+                speler = spelers[get_col].values[0]
+                correct_speler = clickable_spelers[np.where(spelers_raw[get_col] == speler)[0][0]]
+                correct_speler.click()
+                try:
+                    self.find_element_by_class_name('modal-v2').find_element_by_class_name('close').click()
+                    spelers = spelers.iloc[1:]
+                except:
+                    post_to_slack(slack_client, 'Nieuwe speler geselecteerd')
+                    spelers = spelers.head(0)
 
     def rond_training_af(self, slack_client):
         self.go_to_url('Training')
@@ -207,7 +191,7 @@ class OsmDriver(settings.driver):
             info_logger.info('Op toast geklikt')
             post_to_slack(slack_client, 'Op toast geklikt')
 
-    def transfer_geld(self, richting, iteration = 0):
+    def transfer_geld(self, richting, iteration=0):
         self.go_to_url('ControlCentre')
         time.sleep(5)
         self.wait_on_xpath("//div[@id='clubfunds-amount']")
@@ -412,9 +396,11 @@ def run_script_within_try(slack_client):
         browser = OsmDriver()
 
     browser.set_window_size(1920, 1080)
+
+
     try:
         # login op osm en de juiste competitie
-        browser.login(settings.username, settings.password)
+        browser.login(settings.username, settings.password, slack_client)
 
         # Haal geld van de bank
         browser.transfer_geld('af')
@@ -422,7 +408,8 @@ def run_script_within_try(slack_client):
         browser.rond_training_af(slack_client)
 
         # Train speler
-        browser.train(0)
+        for i in range(0, 4):
+            browser.train(slack_client, i)
 
         # Zet specialisten goed
         browser.zet_specialist_goed()
@@ -512,6 +499,8 @@ if __name__ == "__main__":
         if mess_res:
             if 'run' in mess_res:
                 run_this = mess_res['run']
+                if not run_this:
+                    warn = True
             if 'reset' in mess_res:
                 reset = mess_res['reset']
                 run_this = True
