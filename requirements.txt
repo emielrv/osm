@@ -23,7 +23,7 @@ cryptography==2.3
 html5lib==1.0.1
 idna==2.6
 lxml==4.6.3
-numpy==1.13.3
+numpy==1.22.0
 pandas==0.21.1
 pycparser==2.18
 pyOpenSSL==17.5.0
